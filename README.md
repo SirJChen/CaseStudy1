@@ -1,2 +1,2 @@
-# CaseStudy1
-Case Study 1 for Intro to DS
+# Case Study 1 for Intro to DS
+
