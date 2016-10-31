@@ -1,0 +1,86 @@
+##R Dependencies for this project
+library(repmis)
+library(ggplot2)
+library(dplyr)
+library(plyr)
+
+##Loading raw data
+
+CountryData <- source_data("https://d396qusza40orc.cloudfront.net/getdata%2Fdata%2FEDSTATS_Country.csv")
+
+GDP <- source_data("https://d396qusza40orc.cloudfront.net/getdata%2Fdata%2FGDP.csv")
+
+## Raw Data clean up
+## GDP Clean up
+## After looking at the CSV file we see that there are some entries that do no possess a valid GDP value.
+## In addition there are some lines of data at the bottom of the file that we can drop. 
+## We also drop any columns that we don't need
+CleanGDP <- GDP[GDP$V1!=''& GDP$V2!='' & GDP$V5!='', c(1,2,4,5)]
+##Name the variables for ease of use
+names(CleanGDP)<-c("CountryCode", "Ranking", "Country", "GDP")
+##Purge commas from dollar amounts
+CleanGDP$GDP<-as.numeric(gsub(",","",CleanGDP$GDP))
+
+##running a str(CleanGDP) we note with some alarm that the ranking is categorized as a character value. We should clear that up to make our lives easier down the line
+CleanGDP$Ranking<-as.numeric(CleanGDP$Ranking)
+
+str(CleanGDP)
+## We should see now that both GDP and Ranking show up as numeric values, just as God intended. 
+
+##Country Cleanup
+##Looking at the file we can breath a little easier, this file is much cleaner than the GDP file. 
+## Nonetheless there are lot of unused columns, lets trim them. 
+CleanCountry<-CountryData[c(1,2,3)]
+
+
+##Finally we merge the two sets for our final product
+CleanMerge <- merge(CleanCountry, CleanGDP, by="CountryCode", all=TRUE)
+
+## NOTE THAT THIS LAST STEP SHOULD BE DONE AFTER ANSWERING QUESTION 1
+##After merging we see that some entries on one table do not have matching values on the second table, resulting in some missing values.
+##In addition we see that the long form of the countries' names have a second column. We are going to purge those. 
+CleanMerge <- CleanMerge[CleanMerge$Ranking!='' & CleanMerge$GDP!='' & is.na(CleanMerge$Ranking)==FALSE, c(1,2,3,4,6)]
+
+## A final scan of the data revealed on remaining anomaly: Country Code SSD has a ranking and GDP, but its long form name is blank. 
+## SSD is also missing its income category. 
+## After we queried the World Bank we discovered that South Sudan is considered a Low Income Country. 
+
+CleanMerge$`Long Name`[CleanMerge$CountryCode == "SSD"] <- "South Sudan"
+CleanMerge$`Income Group`[CleanMerge$CountryCode == "SSD"] <- "Low income"
+
+## Data is now ready for analysis
+
+## Question 1: Finding how many records match:
+nrow(CleanMerge[CleanMerge$Ranking!='' & CleanMerge$`Income Group`!='' & is.na(CleanMerge$Ranking)==FALSE, ])
+
+##190 records match
+
+## Question 2 Finding the 13th lowest country by GDP
+CleanMerge<-plyr::arrange(CleanMerge, CleanMerge$GDP)
+GDPthirteen<-CleanMerge[13,1]
+##The return value was KNA which corresponds to St. Kitts and Nevis
+
+## Question 3
+## To find the average GDP rankings for the two high income groups we must parse out the countries by income category
+AvgGDP <- CleanMerge[CleanMerge$`Income Group` == "High income: OECD" | CleanMerge$`Income Group` == "High income: nonOECD",c(3,4,5)]
+names(AvgGDP) <- c("IncomeGroup","Ranking", "GrossIncome")
+attach(AvgGDP)
+AvgGDPGroup <- aggregate(AvgGDP[c(2,3)], by=list(IncomeGroup), mean)
+detach(AvgGDP)
+## From the results we can see the following:
+## OECD : Average Ranking: 32.9667 Average GDP: 1483917.1
+## nonOECD: Average Ranking: 91.91304 Average GDP: 104349.8
+
+##Question 4
+ggplot(data=CleanMerge, aes(CleanMerge$GDP, fill=CleanMerge$`Income Group`, colour=CleanMerge$`Income Group`)) + geom_density(alpha = 0.7) + ggtitle("GDP by Income Group") 
+## We note that the graph is incredibly ugly and extremely difficult to interpret, all the results are mashed towards the value zero. 
+## We manually add a limit to the x-axis in an attempt to make the graph a little more presentable
+ggplot(data=CleanMerge, aes(CleanMerge$GDP, fill=CleanMerge$`Income Group`, colour=CleanMerge$`Income Group`)) + geom_density(alpha = 0.7) + ggtitle("GDP by Income Group") + xlim(0,900000)
+##However even with the limit the graph is very difficult to read. We will perform a log transform to GDP and see if that helps any.
+ggplot(data=CleanMerge, aes(log(CleanMerge$GDP), fill=CleanMerge$`Income Group`, colour=CleanMerge$`Income Group`)) + geom_density(alpha = 0.7) + ggtitle("GDP by Income Group") + xlim(2, 18)
+
+##Question 5
+## ntile command is from dplyr.
+CleanMerge$Quantile <- ntile(CleanMerge$Ranking,5)
+## If we view QTable afterwards we can see that there are 5 countries in the 1st quantile of GDP rankings that are also considered lower middle income.
+QTable <- table(CleanMerge$Quantile, CleanMerge$`Income Group`)
